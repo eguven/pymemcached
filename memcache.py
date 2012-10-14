@@ -57,7 +57,7 @@ else: PY3 = False
 # Python version based imports
 if PY3:
     import pickle
-    from io import StringIO
+    from io import StringIO, BytesIO
 else:
     # pickle
     try: import cPickle as pickle
@@ -750,7 +750,7 @@ class Client(local):
             min_compress_len = 0
         else:
             flags |= Client._FLAG_PICKLE
-            file = StringIO()
+            file = BytesIO() if PY3 else StringIO()
             if self.picklerIsKeyword:
                 pickler = self.pickler(file, protocol = self.pickleProtocol)
             else:
@@ -777,6 +777,28 @@ class Client(local):
 
         return (flags, len(val), val)
 
+    def _cmd_builder(self, cmd, key, time, store_info):
+        '''A utility method to build platform specific fullcmd, mainly due
+        to pickle return value type. Some added complexity to avoid extra
+        encode/decode with Python3
+        '''
+        if cmd == 'cas':
+            c = "cas %s %d %d %d %d\r\n" % (
+                    key, store_info[0], time, store_info[1], self.cas_ids[key])
+        else:
+            c = "%s %s %d %d %d\r\n" % (
+                    cmd, key, store_info[0], time, store_info[1])
+        if not PY3:
+            return c + store_info[2]
+        else: # Python3
+            if isinstance(store_info[2], str):
+                return (c + store_info[2]).encode('utf-8')
+            elif isinstance(store_info[2], bytes):
+                return c.encode('utf-8') + store_info[2]
+            else:
+                raise _Error("_cmd_builder: unknown data type (%s)" %
+                        type(store_info[2]))
+
     def _set(self, cmd, key, val, time, min_compress_len = 0):
         self.check_key(key)
         server, key = self._get_server(key)
@@ -792,12 +814,9 @@ class Client(local):
             if cmd == 'cas':
                 if key not in self.cas_ids:
                     return self._set('set', key, val, time, min_compress_len)
-                fullcmd = "%s %s %d %d %d %d\r\n%s" % (
-                        cmd, key, store_info[0], time, store_info[1],
-                        self.cas_ids[key], store_info[2])
+                fullcmd = self._cmd_builder(cmd, key, time, store_info)
             else:
-                fullcmd = "%s %s %d %d %d\r\n%s" % (
-                        cmd, key, store_info[0], time, store_info[1], store_info[2])
+                fullcmd = self._cmd_builder(cmd, key, time, store_info)
 
             try:
                 server.send_cmd(fullcmd)
@@ -984,7 +1003,7 @@ class Client(local):
         if flags & Client._FLAG_COMPRESSED:
             buf = decompress(buf)
 
-        if  flags == 0 or flags == Client._FLAG_COMPRESSED:
+        if flags == 0 or flags == Client._FLAG_COMPRESSED:
             # Either a bare string or a compressed string now decompressed...
             val = buf
         elif flags & Client._FLAG_INTEGER:
@@ -996,7 +1015,7 @@ class Client(local):
                 raise _Error("received _FLAG_LONG in Python%s" % sys.version)
         elif flags & Client._FLAG_PICKLE:
             try:
-                file = StringIO(buf)
+                file = BytesIO(buf) if PY3 else StringIO(buf)
                 unpickler = self.unpickler(file)
                 if self.persistent_load:
                     unpickler.persistent_load = self.persistent_load
@@ -1121,15 +1140,17 @@ class _Host(object):
             self.socket = None
 
     def send_cmd(self, cmd):
-        if PY3:#and isinstance(cmd, str):
-            self.socket.sendall((cmd + '\r\n').encode('ascii'))
+        if PY3 and isinstance(cmd, str):
+            self.socket.sendall((cmd + '\r\n').encode('utf-8'))
+        elif PY3:
+            self.socket.sendall(cmd + b'\r\n')
         else:
             self.socket.sendall(cmd + '\r\n')
 
     def send_cmds(self, cmds):
         """ cmds already has trailing \r\n's applied """
         if PY3:#and isinstance(cmd, str):
-            self.socket.sendall(cmds.encode('ascii'))
+            self.socket.sendall(cmds.encode('utf-8'))
         else:
             self.socket.sendall(cmds)
 
@@ -1149,7 +1170,7 @@ class _Host(object):
 
             buf += data
         self.buffer = buf[index+2:]
-        retval = buf[:index].decode('ascii') if PY3 else buf[:index]
+        retval = buf[:index].decode('utf-8') if PY3 else buf[:index]
         return retval
 
     def expect(self, text):
@@ -1239,7 +1260,7 @@ if __name__ == "__main__":
                 print("OK")
             else:
                 print("FAIL"); failures = failures + 1
-            print("Checking results of delete ...")
+            print("Checking results of delete ...", end=' ')
             if mc.get("long") == None:
                 print("OK")
             else:
@@ -1303,9 +1324,9 @@ if __name__ == "__main__":
         try:
             x = mc.set('a'*SERVER_MAX_KEY_LENGTH, 1)
         except Client.MemcachedKeyLengthError as msg:
-            print("FAIL"); failures = failures + 1
+            print("FAIL", end=' '); failures = failures + 1
         else:
-            print("OK")
+            print("OK", end=' ')
         try:
             x = mc.set('a'*SERVER_MAX_KEY_LENGTH + 'a', 1)
         except Client.MemcachedKeyLengthError as msg:
@@ -1327,9 +1348,13 @@ if __name__ == "__main__":
         else:
             print("OK", end=' ')
         import pickle
-        s = pickle.loads('V\\u4f1a\np0\n.')
+        if not PY3:
+            s = pickle.loads('V\\u4f1a\np0\n.')
+            sk = (s*SERVER_MAX_KEY_LENGTH).encode('utf-8')
+        else:
+            sk = pickle.loads(b'\x80\x03X\x03\x00\x00\x00\xe4\xbc\x9aq\x00.')
         try:
-            x = mc.set((s*SERVER_MAX_KEY_LENGTH).encode('utf-8'), 1)
+            x = mc.set(sk, 1)
         except Client.MemcachedKeyLengthError:
             print("OK")
         else:
