@@ -42,19 +42,33 @@ Detailed Documentation
 
 More detailed documentation is available in the L{Client} class.
 """
+from __future__ import print_function
 
 import sys
 import socket
 import time
 import os
 import re
-try:
-    import cPickle as pickle
-except ImportError:
+
+# set Python version constant
+if sys.version > '3': PY3 = True
+else: PY3 = False
+
+# Python version based imports
+if PY3:
     import pickle
+    from io import StringIO
+else:
+    # pickle
+    try: import cPickle as pickle
+    except ImportError: import pickle
+    # StringIO
+    try: from cStringIO import StringIO
+    except ImportError: from StringIO import StringIO
 
 from binascii import crc32   # zlib version is not cross-platform
 def cmemcache_hash(key):
+    if PY3: key = key.encode('utf-8')
     return((((crc32(key) & 0xffffffff) >> 16) & 0x7fff) or 1)
 serverHashFunction = cmemcache_hash
 
@@ -71,11 +85,6 @@ except ImportError:
     # quickly define a decompress just in case we recv compressed data.
     def decompress(val):
         raise _Error("received compressed data but I don't support compression (import error)")
-
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
 
 
 #  Original author: Evan Martin of Danga Interactive
@@ -335,7 +344,7 @@ class Client(local):
         for i in range(Client._SERVER_RETRIES):
             server = self.buckets[serverhash % len(self.buckets)]
             if server.connect():
-                #print "(using server %s)" % server,
+                #print("(using server %s)" % server, end=' ')
                 return server, key
             serverhash = serverHashFunction(str(serverhash) + str(i))
         return None, None
@@ -390,7 +399,7 @@ class Client(local):
                   write("delete %s\r\n" % key)
             try:
                 server.send_cmds(''.join(bigcmd))
-            except socket.error, msg:
+            except socket.error as msg:
                 rc = 0
                 if isinstance(msg, tuple): msg = msg[1]
                 server.mark_dead(msg)
@@ -404,7 +413,7 @@ class Client(local):
             try:
                 for key in keys:
                     server.expect("DELETED")
-            except socket.error, msg:
+            except socket.error as msg:
                 if isinstance(msg, tuple): msg = msg[1]
                 server.mark_dead(msg)
                 rc = 0
@@ -434,7 +443,7 @@ class Client(local):
             if line and line.strip() in ['DELETED', 'NOT_FOUND']: return 1
             self.debuglog('Delete expected DELETED or NOT_FOUND, got: %s'
                     % repr(line))
-        except socket.error, msg:
+        except socket.error as msg:
             if isinstance(msg, tuple): msg = msg[1]
             server.mark_dead(msg)
         return 0
@@ -489,7 +498,7 @@ class Client(local):
             line = server.readline()
             if line == None or line.strip() =='NOT_FOUND': return None
             return int(line)
-        except socket.error, msg:
+        except socket.error as msg:
             if isinstance(msg, tuple): msg = msg[1]
             server.mark_dead(msg)
             return None
@@ -697,7 +706,7 @@ class Client(local):
                     else:
                         notstored.append(prefixed_to_orig_key[key])
                 server.send_cmds(''.join(bigcmd))
-            except socket.error, msg:
+            except socket.error as msg:
                 if isinstance(msg, tuple): msg = msg[1]
                 server.mark_dead(msg)
                 dead_servers.append(server)
@@ -717,7 +726,7 @@ class Client(local):
                         continue
                     else:
                         notstored.append(prefixed_to_orig_key[key]) #un-mangle.
-            except (_Error, socket.error), msg:
+            except (_Error, socket.error) as msg:
                 if isinstance(msg, tuple): msg = msg[1]
                 server.mark_dead(msg)
         return notstored
@@ -793,7 +802,7 @@ class Client(local):
             try:
                 server.send_cmd(fullcmd)
                 return(server.expect("STORED") == "STORED")
-            except socket.error, msg:
+            except socket.error as msg:
                 if isinstance(msg, tuple): msg = msg[1]
                 server.mark_dead(msg)
             return 0
@@ -805,7 +814,7 @@ class Client(local):
             try:
                 server._get_socket()
                 return _unsafe_set()
-            except (_ConnectionDeadError, socket.error), msg:
+            except (_ConnectionDeadError, socket.error) as msg:
                 server.mark_dead(msg)
             return 0
 
@@ -835,7 +844,7 @@ class Client(local):
                     value = self._recv_value(server, flags, rlen)
                 finally:
                     server.expect("END")
-            except (_Error, socket.error), msg:
+            except (_Error, socket.error) as msg:
                 if isinstance(msg, tuple): msg = msg[1]
                 server.mark_dead(msg)
                 return None
@@ -850,7 +859,7 @@ class Client(local):
                 if server.connect():
                     return _unsafe_get()
                 return None
-            except (_ConnectionDeadError, socket.error), msg:
+            except (_ConnectionDeadError, socket.error) as msg:
                 server.mark_dead(msg)
             return None
 
@@ -915,7 +924,7 @@ class Client(local):
         for server in server_keys.iterkeys():
             try:
                 server.send_cmd("get %s" % " ".join(server_keys[server]))
-            except socket.error, msg:
+            except socket.error as msg:
                 if isinstance(msg, tuple): msg = msg[1]
                 server.mark_dead(msg)
                 dead_servers.append(server)
@@ -935,7 +944,7 @@ class Client(local):
                         val = self._recv_value(server, flags, rlen)
                         retvals[prefixed_to_orig_key[rkey]] = val   # un-prefix returned key.
                     line = server.readline()
-            except (_Error, socket.error), msg:
+            except (_Error, socket.error) as msg:
                 if isinstance(msg, tuple): msg = msg[1]
                 server.mark_dead(msg)
         return retvals
@@ -989,7 +998,7 @@ class Client(local):
                 if self.persistent_load:
                     unpickler.persistent_load = self.persistent_load
                 val = unpickler.load()
-            except Exception, e:
+            except Exception as e:
                 self.debuglog('Pickle error: %s\n' % e)
                 return None
         else:
@@ -1092,10 +1101,10 @@ class _Host(object):
         if hasattr(s, 'settimeout'): s.settimeout(self.socket_timeout)
         try:
             s.connect(self.address)
-        except socket.timeout, msg:
+        except socket.timeout as msg:
             self.mark_dead("connect: %s" % msg)
             return None
-        except socket.error, msg:
+        except socket.error as msg:
             if isinstance(msg, tuple): msg = msg[1]
             self.mark_dead("connect: %s" % msg[1])
             return None
@@ -1171,9 +1180,9 @@ def _doctest():
 
 if __name__ == "__main__":
     failures = 0
-    print "Testing docstrings..."
+    print("Testing docstrings...")
     _doctest()
-    print "Running tests:"
+    print("Running tests:")
     print
     serverList = [["127.0.0.1:11211"]]
     if '--do-unix' in sys.argv:
@@ -1188,14 +1197,14 @@ if __name__ == "__main__":
             return "%s" % val
         def test_setget(key, val):
             global failures
-            print "Testing set/get {'%s': %s} ..." % (to_s(key), to_s(val)),
+            print("Testing set/get {'%s': %s} ..." % (to_s(key), to_s(val)), end=' ')
             mc.set(key, val)
             newval = mc.get(key)
             if newval == val:
-                print "OK"
+                print("OK")
                 return 1
             else:
-                print "FAIL"; failures = failures + 1
+                print("FAIL"); failures = failures + 1
                 return 0
 
 
@@ -1212,137 +1221,137 @@ if __name__ == "__main__":
         test_setget("a_string", "some random string")
         test_setget("an_integer", 42)
         if test_setget("long", long(1<<30)):
-            print "Testing delete ...",
+            print("Testing delete ...", end=' ')
             if mc.delete("long"):
-                print "OK"
+                print("OK")
             else:
-                print "FAIL"; failures = failures + 1
-            print "Checking results of delete ..."
+                print("FAIL"); failures = failures + 1
+            print("Checking results of delete ...")
             if mc.get("long") == None:
-                print "OK"
+                print("OK")
             else:
-                print "FAIL"; failures = failures + 1
-        print "Testing get_multi ...",
-        print mc.get_multi(["a_string", "an_integer"])
+                print("FAIL"); failures = failures + 1
+        print("Testing get_multi ...", end=' ')
+        print(mc.get_multi(["a_string", "an_integer"]))
 
         #  removed from the protocol
         #if test_setget("timed_delete", 'foo'):
-        #    print "Testing timed delete ...",
+        #    print("Testing timed delete ...", end=' ')
         #    if mc.delete("timed_delete", 1):
-        #        print "OK"
+        #        print("OK")
         #    else:
-        #        print "FAIL"; failures = failures + 1
-        #    print "Checking results of timed delete ..."
+        #        print("FAIL"); failures = failures + 1
+        #    print("Checking results of timed delete ...")
         #    if mc.get("timed_delete") == None:
-        #        print "OK"
+        #        print("OK")
         #    else:
-        #        print "FAIL"; failures = failures + 1
+        #        print("FAIL"); failures = failures + 1
 
-        print "Testing get(unknown value) ...",
-        print to_s(mc.get("unknown_value"))
+        print("Testing get(unknown value) ...", end=' ')
+        print(to_s(mc.get("unknown_value")))
 
         f = FooStruct()
         test_setget("foostruct", f)
 
-        print "Testing incr ...",
+        print("Testing incr ...", end=' ')
         x = mc.incr("an_integer", 1)
         if x == 43:
-            print "OK"
+            print("OK")
         else:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
 
-        print "Testing decr ...",
+        print("Testing decr ...", end=' ')
         x = mc.decr("an_integer", 1)
         if x == 42:
-            print "OK"
+            print("OK")
         else:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
         sys.stdout.flush()
 
         # sanity tests
-        print "Testing sending spaces...",
+        print("Testing sending spaces...", end=' ')
         sys.stdout.flush()
         try:
             x = mc.set("this has spaces", 1)
-        except Client.MemcachedKeyCharacterError, msg:
-            print "OK"
+        except Client.MemcachedKeyCharacterError as msg:
+            print("OK")
         else:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
 
-        print "Testing sending control characters...",
+        print("Testing sending control characters...", end=' ')
         try:
             x = mc.set("this\x10has\x11control characters\x02", 1)
-        except Client.MemcachedKeyCharacterError, msg:
-            print "OK"
+        except Client.MemcachedKeyCharacterError as msg:
+            print("OK")
         else:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
 
-        print "Testing using insanely long key...",
+        print("Testing using insanely long key...", end=' ')
         try:
             x = mc.set('a'*SERVER_MAX_KEY_LENGTH, 1)
-        except Client.MemcachedKeyLengthError, msg:
-            print "FAIL"; failures = failures + 1
+        except Client.MemcachedKeyLengthError as msg:
+            print("FAIL"); failures = failures + 1
         else:
-            print "OK"
+            print("OK")
         try:
             x = mc.set('a'*SERVER_MAX_KEY_LENGTH + 'a', 1)
-        except Client.MemcachedKeyLengthError, msg:
-            print "OK"
+        except Client.MemcachedKeyLengthError as msg:
+            print("OK")
         else:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
 
-        print "Testing sending a unicode-string key...",
+        print("Testing sending a unicode-string key...", end=' ')
         try:
             x = mc.set(u'keyhere', 1)
-        except Client.MemcachedStringEncodingError, msg:
-            print "OK",
+        except Client.MemcachedStringEncodingError as msg:
+            print("OK", end=' ')
         else:
-            print "FAIL",; failures = failures + 1
+            print("FAIL", end=' '); failures = failures + 1
         try:
             x = mc.set((u'a'*SERVER_MAX_KEY_LENGTH).encode('utf-8'), 1)
         except:
-            print "FAIL",; failures = failures + 1
+            print("FAIL", end=' '); failures = failures + 1
         else:
-            print "OK",
+            print("OK", end=' ')
         import pickle
         s = pickle.loads('V\\u4f1a\np0\n.')
         try:
             x = mc.set((s*SERVER_MAX_KEY_LENGTH).encode('utf-8'), 1)
         except Client.MemcachedKeyLengthError:
-            print "OK"
+            print("OK")
         else:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
 
-        print "Testing using a value larger than the memcached value limit...",
+        print("Testing using a value larger than the memcached value limit...", end=' ')
         x = mc.set('keyhere', 'a'*SERVER_MAX_VALUE_LENGTH)
         if mc.get('keyhere') == None:
-            print "OK",
+            print("OK", end=' ')
         else:
-            print "FAIL",; failures = failures + 1
+            print("FAIL", end=' '); failures = failures + 1
         x = mc.set('keyhere', 'a'*SERVER_MAX_VALUE_LENGTH + 'aaa')
         if mc.get('keyhere') == None:
-            print "OK"
+            print("OK")
         else:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
 
-        print "Testing set_multi() with no memcacheds running",
+        print("Testing set_multi() with no memcacheds running", end=' ')
         mc.disconnect_all()
         errors = mc.set_multi({'keyhere' : 'a', 'keythere' : 'b'})
         if errors != []:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
         else:
-            print "OK"
+            print("OK")
 
-        print "Testing delete_multi() with no memcacheds running",
+        print("Testing delete_multi() with no memcacheds running", end=' ')
         mc.disconnect_all()
         ret = mc.delete_multi({'keyhere' : 'a', 'keythere' : 'b'})
         if ret != 1:
-            print "FAIL"; failures = failures + 1
+            print("FAIL"); failures = failures + 1
         else:
-            print "OK"
+            print("OK")
 
     if failures > 0:
-        print '*** THERE WERE FAILED TESTS'
+        print('*** THERE WERE FAILED TESTS')
         sys.exit(1)
     sys.exit(0)
 
