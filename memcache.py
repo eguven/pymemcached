@@ -409,7 +409,7 @@ class Client(local):
         for server in dead_servers:
             del server_keys[server]
 
-        for server, keys in server_keys.iteritems():
+        for server, keys in server_keys.items():
             try:
                 for key in keys:
                     server.expect("DELETED")
@@ -718,7 +718,7 @@ class Client(local):
         #  short-circuit if there are no servers, just return all keys
         if not server_keys: return(list(mapping.keys()))
 
-        for server, keys in server_keys.iteritems():
+        for server, keys in server_keys.items():
             try:
                 for key in keys:
                     line = server.readline()
@@ -817,7 +817,6 @@ class Client(local):
                 fullcmd = self._cmd_builder(cmd, key, time, store_info)
             else:
                 fullcmd = self._cmd_builder(cmd, key, time, store_info)
-
             try:
                 server.send_cmd(fullcmd)
                 return(server.expect("STORED") == "STORED")
@@ -1052,8 +1051,12 @@ class Client(local):
             raise Client.MemcachedKeyTypeError("Key must be str()'s")
 
         else:
+            if not PY3 or (PY3 and isinstance(key, bytes)):
+                keylen = len(key)
+            elif PY3 and isinstance(key, str):
+                keylen = len(key.encode('utf-8'))
             if self.server_max_key_length != 0 and \
-                len(key) + key_extra_len > self.server_max_key_length:
+                keylen + key_extra_len > self.server_max_key_length:
                 raise Client.MemcachedKeyLengthError("Key length is > %s"
                          % self.server_max_key_length)
             for char in key:
@@ -1256,8 +1259,7 @@ if __name__ == "__main__":
 
         test_setget("a_string", "some random string")
         test_setget("an_integer", 42)
-        # TODO: increase longval
-        longval = 1<<30 if PY3 else long(1<<30)
+        longval = 1<<65 if PY3 else long(1<<65)
         if test_setget("long", longval):
             print("Testing delete ...", end=' ')
             if mc.delete("long"):
@@ -1376,13 +1378,14 @@ if __name__ == "__main__":
             else:
                 print("OK", end=' ')
         else:
-            print("SKIP(PY3)", end=' ')
+            print("SKIP SKIP", end=' ')
         import pickle
+        # pickle protocol: 2
+        s = pickle.loads(b'\x80\x02X\x03\x00\x00\x00\xe4\xbc\x9aq\x00.')
         if not PY3:
-            s = pickle.loads('V\\u4f1a\np0\n.')
             sk = (s*SERVER_MAX_KEY_LENGTH).encode('utf-8')
         else:
-            sk = pickle.loads(b'\x80\x03X\x03\x00\x00\x00\xe4\xbc\x9aq\x00.')
+            sk = s*SERVER_MAX_KEY_LENGTH
         try:
             x = mc.set(sk, 1)
         except Client.MemcachedKeyLengthError:
@@ -1423,5 +1426,3 @@ if __name__ == "__main__":
         sys.exit(1)
     sys.exit(0)
 
-
-# vim: ts=4 sw=4 et :
