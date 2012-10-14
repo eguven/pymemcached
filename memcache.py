@@ -1006,6 +1006,8 @@ class Client(local):
         if flags == 0 or flags == Client._FLAG_COMPRESSED:
             # Either a bare string or a compressed string now decompressed...
             val = buf
+            if PY3 and isinstance(val, bytes):
+                val = val.decode('utf-8')
         elif flags & Client._FLAG_INTEGER:
             val = int(buf)
         elif flags & Client._FLAG_LONG:
@@ -1026,6 +1028,8 @@ class Client(local):
         else:
             self.debuglog("unknown flags on get: %x\n" % flags)
 
+        #if PY3 and isinstance(val, bytes):
+        #    return val.decode('utf-8')
         return val
 
     def check_key(self, key, key_extra_len=0):
@@ -1334,19 +1338,45 @@ if __name__ == "__main__":
         else:
             print("FAIL"); failures = failures + 1
 
+        rawkey = b'\xe4\xbc\x9a' # OK for Python2, FAIL for Python3
+        decoded = rawkey.decode('utf-8') # FAIL for Python2, OK for Python3
+
+        print("Testing illegal keys...", end=' ')
+        l = [(1,42),(None,1337),(object,"fail")]
+        for k,v in l:
+            try: x = mc.set(k, v)
+            except (Client.MemcachedKeyTypeError, Client.MemcachedKeyNoneError):
+                print("OK", end=' ')
+            else:
+                print("FAIL", end=' '); failurs = failures + 1
+
+        try:
+            if PY3:
+                x = mc.set(rawkey, "captain not obvious")
+            else:
+                x = mc.set(decoded, "captain not obvious")
+        except (Client.MemcachedKeyTypeError, Client.MemcachedStringEncodingError):
+            print("OK")
+        else:
+            print("FAIL")
+
         print("Testing sending a unicode-string key...", end=' ')
-        try:
-            x = mc.set(u'keyhere', 1)
-        except Client.MemcachedStringEncodingError as msg:
-            print("OK", end=' ')
+
+        if not PY3:
+            try:
+                x = mc.set(u'keyhere', 1)
+            except Client.MemcachedStringEncodingError as msg:
+                print("OK", end=' ')
+            else:
+                print("FAIL", end=' '); failures = failures + 1
+            try:
+                x = mc.set((u'a'*SERVER_MAX_KEY_LENGTH).encode('utf-8'), 1)
+            except:
+                print("FAIL", end=' '); failures = failures + 1
+            else:
+                print("OK", end=' ')
         else:
-            print("FAIL", end=' '); failures = failures + 1
-        try:
-            x = mc.set((u'a'*SERVER_MAX_KEY_LENGTH).encode('utf-8'), 1)
-        except:
-            print("FAIL", end=' '); failures = failures + 1
-        else:
-            print("OK", end=' ')
+            print("SKIP(PY3)", end=' ')
         import pickle
         if not PY3:
             s = pickle.loads('V\\u4f1a\np0\n.')
