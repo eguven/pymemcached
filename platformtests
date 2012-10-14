@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# A script to run tests using virtualenv with different Python interpreters
+
+PWD=$(pwd)
+REPODIR=$PWD/$(dirname $0)
+DIR=$REPODIR/..
+
+echo -e "\nThis script automatically runs tests using virtualenv"
+echo "Tests are run for Python[2.6|2.7|3.1|3.2|3.3]"
+echo "This script does not check if you have the necessary python interpreters available"
+echo -e "\nREPODIR: $REPODIR\nENVDIR: $DIR\n"
+
+read -p "note that virtualenv is required to run tests. Continue? (y/n) " -n 1
+if [[ ! $REPLY =~ ^[Yy]$ ]]
+then
+    echo -e "\n"
+    exit 1
+fi
+
+function runtests {
+    for PYV in {2.6,2.7,3.1,3.2,3.3}
+        do
+            cd $DIR
+            virtualenv -p python$PYV $DIR/ENV$PYV
+            source ./ENV$PYV/bin/activate
+            cd $REPODIR
+            python setup.py install
+            python memcache.py
+            rm -rf $REPODIR/dist $REPODIR/build $REPODIR/pymemcached.egg-info memcache.pyc
+            echo
+            read -p "Tests done with python$PYV - Press ENTER to continue to next "
+            deactivate
+            cd $DIR
+            rm -rf $DIR/ENV$PYV
+        done
+}
+
+echo
+
+# run 'em
+runtests
