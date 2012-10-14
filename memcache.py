@@ -388,7 +388,7 @@ class Client(local):
         dead_servers = []
 
         rc = 1
-        for server in server_keys.iterkeys():
+        for server in server_keys.keys():
             bigcmd = []
             write = bigcmd.append
             if time != None:
@@ -686,13 +686,13 @@ class Client(local):
 
         self._statlog('set_multi')
 
-        server_keys, prefixed_to_orig_key = self._map_and_prefix_keys(mapping.iterkeys(), key_prefix)
+        server_keys, prefixed_to_orig_key = self._map_and_prefix_keys(iter(mapping.keys()), key_prefix)
 
         # send out all requests on each server before reading anything
         dead_servers = []
         notstored = [] # original keys.
 
-        for server in server_keys.iterkeys():
+        for server in server_keys.keys():
             bigcmd = []
             write = bigcmd.append
             try:
@@ -716,7 +716,7 @@ class Client(local):
             del server_keys[server]
 
         #  short-circuit if there are no servers, just return all keys
-        if not server_keys: return(mapping.keys())
+        if not server_keys: return(list(mapping.keys()))
 
         for server, keys in server_keys.iteritems():
             try:
@@ -921,7 +921,7 @@ class Client(local):
 
         # send out all requests on each server before reading anything
         dead_servers = []
-        for server in server_keys.iterkeys():
+        for server in server_keys.keys():
             try:
                 server.send_cmd("get %s" % " ".join(server_keys[server]))
             except socket.error as msg:
@@ -934,7 +934,7 @@ class Client(local):
             del server_keys[server]
 
         retvals = {}
-        for server in server_keys.iterkeys():
+        for server in server_keys.keys():
             try:
                 line = server.readline()
                 while line and line != 'END':
@@ -1018,14 +1018,14 @@ class Client(local):
         if isinstance(key, tuple): key = key[1]
         if not key:
             raise Client.MemcachedKeyNoneError("Key is None")
-        if isinstance(key, unicode):
+        if not PY3 and isinstance(key, unicode):
             raise Client.MemcachedStringEncodingError(
                     "Keys must be str()'s, not unicode.  Convert your unicode "
                     "strings using mystring.encode(charset)!")
         if not isinstance(key, str):
             raise Client.MemcachedKeyTypeError("Key must be str()'s")
 
-        if isinstance(key, basestring):
+        else:
             if self.server_max_key_length != 0 and \
                 len(key) + key_extra_len > self.server_max_key_length:
                 raise Client.MemcachedKeyLengthError("Key length is > %s"
@@ -1183,7 +1183,7 @@ if __name__ == "__main__":
     print("Testing docstrings...")
     _doctest()
     print("Running tests:")
-    print
+    print()
     serverList = [["127.0.0.1:11211"]]
     if '--do-unix' in sys.argv:
         serverList.append([os.path.join(os.getcwd(), 'memcached.socket')])
@@ -1192,7 +1192,7 @@ if __name__ == "__main__":
         mc = Client(servers, debug=1)
 
         def to_s(val):
-            if not isinstance(val, basestring):
+            if not isinstance(val, str):
                 return "%s (%s)" % (val, type(val))
             return "%s" % val
         def test_setget(key, val):
