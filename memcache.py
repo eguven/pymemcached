@@ -1366,13 +1366,13 @@ if __name__ == "__main__":
 
         if not PY3:
             try:
-                x = mc.set(u'keyhere', 1)
+                x = mc.set(unicode('keyhere'), 1)
             except Client.MemcachedStringEncodingError as msg:
                 print("OK", end=' ')
             else:
                 print("FAIL", end=' '); failures = failures + 1
             try:
-                x = mc.set((u'a'*SERVER_MAX_KEY_LENGTH).encode('utf-8'), 1)
+                x = mc.set((unicode('a')*SERVER_MAX_KEY_LENGTH).encode('utf-8'), 1)
             except:
                 print("FAIL", end=' '); failures = failures + 1
             else:
